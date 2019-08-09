@@ -56,6 +56,7 @@ Supported HTTP methods: **GET**, **POST**, **PUT**, **PATCH**, **DELETE** and **
 
     import aiohttp
     import asyncio
+    from yarl import URL
     from aioresponses import aioresponses
 
     @aioresponses()
@@ -66,6 +67,10 @@ Supported HTTP methods: **GET**, **POST**, **PUT**, **PATCH**, **DELETE** and **
         resp = loop.run_until_complete(session.get('http://example.com'))
 
         assert resp.status == 200
+        assert len(m.calls) == 1
+        assert m.calls[0].request.url == URL('http://test.example.com')
+        resp = await m.calls[0].response.text()
+        assert resp == 'test'
 
 
 for convenience use *payload* argument to mock out json response. Example below.
@@ -76,9 +81,10 @@ for convenience use *payload* argument to mock out json response. Example below.
 
     import asyncio
     import aiohttp
+    from yarl import URL
     from aioresponses import aioresponses
 
-    def test_ctx():
+    async def test_ctx():
         loop = asyncio.get_event_loop()
         session = aiohttp.ClientSession()
         with aioresponses() as m:
@@ -88,6 +94,10 @@ for convenience use *payload* argument to mock out json response. Example below.
             data = loop.run_until_complete(resp.json())
 
             assert dict(foo='bar') == data
+            assert len(m.calls) == 1
+            assert m.calls[0].request.url == URL('http://test.example.com')
+            resp = await m.calls[0].response.text()
+            assert resp == '{"foo": "bar"}'
 
 **aioresponses allows to mock out any HTTP headers**
 
