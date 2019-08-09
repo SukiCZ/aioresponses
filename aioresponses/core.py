@@ -115,6 +115,21 @@ class RequestMatch(object):
                 self.reason = ''
         self.callback = callback
 
+    def __eq__(self, other: 'RequestMatch'):
+        return all([
+            str(self.url_or_pattern) == str(other.url_or_pattern),
+            self.method == other.method,
+            self.body == other.body,
+            self.payload == other.payload,
+            self.repeat == other.repeat,
+        ])
+
+    def __str__(self):
+        return "Request('%s': '%s')" % (
+            self.method,
+            self.url_or_pattern,
+        )
+
     def match_str(self, url: URL) -> bool:
         return self.url_or_pattern == url
 
@@ -229,6 +244,7 @@ class aioresponses(object):
                              autospec=True)
         self.requests = {}
         self._calls = CallList()
+        self._call_args = None
 
     def __enter__(self) -> 'aioresponses':
         self.start()
@@ -262,6 +278,7 @@ class aioresponses(object):
     def clear(self):
         self._responses.clear()
         self._matches.clear()
+        self._call_args = None
         self._calls.clear()
 
     def start(self):
@@ -345,6 +362,73 @@ class aioresponses(object):
             raise response
         return response, matcher
 
+    def _call_matcher(self, _call):
+        """
+        Given a call (or simply an (args, kwargs) tuple), return a
+        comparison key suitable for matching with other calls.
+        This is a best effort method which relies on the spec's signature,
+        if available, or falls back on the arguments themselves.
+        """
+
+        if isinstance(_call, RequestMatch):
+            return _call
+        if len(_call) == 2:
+            args, kwargs = _call
+            return RequestMatch(*args, **kwargs)
+        else:
+            raise NotImplementedError
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if len(self._calls) != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times."
+                   % (self.__class__,
+                      len(self._calls)))
+            raise AssertionError(msg)
+
+    def assert_called(self):
+        """assert that the mock was never called.
+        """
+        if len(self._calls) == 0:
+            msg = ("Expected '%s' to not have been called. Called %s times."
+                   % (self.__class__,
+                      len(self._calls)))
+            raise AssertionError(msg)
+
+    def assert_called_once(self):
+        """assert that the mock was called only once.
+        """
+        if not len(self._calls) == 1:
+            msg = ("Expected '%s' to have been called once. Called %s times."
+                   % (self.__class__ or 'mock',
+                      len(self._calls)))
+
+            raise AssertionError(msg)
+
+    def assert_called_with(self, *args, **kwargs):
+        """assert that the mock was called with the specified arguments.
+        Raises an AssertionError if the args and keyword args passed in are
+        different to the last call to the mock."""
+        self.assert_called()
+
+        expected = self._call_matcher((args, kwargs))
+        actual = self._call_matcher(self._call_args)
+        if expected != actual:
+            msg = ("Expected '%s' to been called with '%s'. Actual call '%s'"
+                   % (self.__class__,
+                      expected,
+                      actual))
+
+            raise AssertionError(msg)
+
+    def assert_called_once_with(self, *args, **kwargs):
+        """assert that the mock was called once with the specified arguments.
+        Raises an AssertionError if the args and keyword args passed in are
+        different to the only call to the mock."""
+        self.assert_called_once()
+        self.assert_called_with(*args, **kwargs)
+
     async def _request_mock(self, orig_self: ClientSession,
                             method: str, url: 'Union[URL, str]',
                             *args: Tuple,
@@ -360,6 +444,7 @@ class aioresponses(object):
 
         response, request = await self.match(method, url, **kwargs)
 
+        self._call_args = request
         self._calls.add(request, response)
 
         if response is None:
