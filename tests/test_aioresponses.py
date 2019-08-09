@@ -146,6 +146,8 @@ class AIOResponsesTestCase(TestCase):
         self.assertIsInstance(response, ClientResponse)
         self.assertEqual(response.status, 200)
         self.assertEqual(len(m.calls), 2)
+        with self.assertRaises(AssertionError):
+            m.assert_called_once()
 
     @aioresponses()
     def test_method_dont_match(self, m):
@@ -401,6 +403,31 @@ class AIOResponsesTestCase(TestCase):
         response = future.result()
         data = self.run_async(response.read())
         assert data == body
+
+    @aioresponses()
+    def test_assert_called_once(self, m):
+        m.get(self.url)
+        with self.assertRaises(AssertionError):
+            m.assert_called()
+        self.run_async(self.session.get(self.url))
+
+        m.assert_called_once()
+        m.assert_called_once_with(self.url)
+        m.assert_called_with(self.url)
+        with self.assertRaises(AssertionError):
+            m.assert_not_called()
+
+        with self.assertRaises(AssertionError):
+            m.assert_called_with("http://foo.bar")
+
+    @aioresponses()
+    def test_assert_called_twice(self, m):
+        m.get(self.url, repeat=True)
+        m.assert_not_called()
+        self.run_async(self.session.get(self.url))
+        self.run_async(self.session.get(self.url))
+        with self.assertRaises(AssertionError):
+            m.assert_called_once()
 
 
 class AIOResponsesRaiseForStatusSessionTestCase(TestCase):
