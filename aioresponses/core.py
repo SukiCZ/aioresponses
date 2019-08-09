@@ -26,6 +26,13 @@ from .compat import (
     normalize_url,
 )
 
+try:
+    from collections.abc import Sequence, Sized
+except ImportError:
+    from collections import Sequence, Sized
+
+Call = namedtuple("Call", ["request", "response"])
+
 
 class CallbackResult:
 
@@ -45,6 +52,26 @@ class CallbackResult:
         self.headers = headers
         self.response_class = response_class
         self.reason = reason
+
+
+class CallList(Sequence, Sized):
+    def __init__(self):
+        self._calls = []
+
+    def __iter__(self):
+        return iter(self._calls)
+
+    def __len__(self):
+        return len(self._calls)
+
+    def __getitem__(self, idx):
+        return self._calls[idx]
+
+    def add(self, request, response):
+        self._calls.append(Call(request, response))
+
+    def clear(self):
+        self._calls = []
 
 
 class RequestMatch(object):
@@ -201,6 +228,7 @@ class aioresponses(object):
                              side_effect=self._request_mock,
                              autospec=True)
         self.requests = {}
+        self._calls = CallList()
 
     def __enter__(self) -> 'aioresponses':
         self.start()
@@ -234,6 +262,7 @@ class aioresponses(object):
     def clear(self):
         self._responses.clear()
         self._matches.clear()
+        self._calls.clear()
 
     def start(self):
         self._responses = []
@@ -246,6 +275,10 @@ class aioresponses(object):
             response.close()
         self.patcher.stop()
         self.clear()
+
+    @property
+    def calls(self):
+        return self._calls
 
     def head(self, url: 'Union[URL, str, Pattern]', **kwargs):
         self.add(url, method=hdrs.METH_HEAD, **kwargs)
@@ -298,19 +331,19 @@ class aioresponses(object):
 
     async def match(
             self, method: str, url: URL, **kwargs: Dict
-    ) -> Optional['ClientResponse']:
+    ) -> (Optional['ClientResponse'], Optional['RequestMatch']):
         for i, matcher in enumerate(self._matches):
             if matcher.match(method, url):
                 response = await matcher.build_response(url, **kwargs)
                 break
         else:
-            return None
+            return None, None
 
         if matcher.repeat is False:
             del self._matches[i]
         if isinstance(response, Exception):
             raise response
-        return response
+        return response, matcher
 
     async def _request_mock(self, orig_self: ClientSession,
                             method: str, url: 'Union[URL, str]',
@@ -325,7 +358,10 @@ class aioresponses(object):
                     orig_self, method, url, *args, **kwargs
                 ))
 
-        response = await self.match(method, url, **kwargs)
+        response, request = await self.match(method, url, **kwargs)
+
+        self._calls.add(request, response)
+
         if response is None:
             raise ClientConnectionError(
                 'Connection refused: {} {}'.format(method, url)
