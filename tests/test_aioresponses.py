@@ -145,12 +145,45 @@ class AIOResponsesTestCase(TestCase):
         )
         self.assertIsInstance(response, ClientResponse)
         self.assertEqual(response.status, 200)
+        self.assertEqual(len(m.calls), 2)
 
     @aioresponses()
     def test_method_dont_match(self, m):
         m.get(self.url)
         with self.assertRaises(ClientConnectionError):
             self.run_async(self.session.post(self.url))
+
+    @aioresponses()
+    def test_post_with_data(self, m):
+        payload = {"spam": "eggs"}
+        m.post(
+            self.url,
+            payload=payload,
+            headers=dict(connection='keep-alive'),
+        )
+        response = self.run_async(self.session.post(self.url))
+        self.assertIsInstance(response, ClientResponse)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(m.calls), 1)
+        self.assertEqual(m.calls[0].request.payload, {'spam': 'eggs'})
+        self.assertEqual(
+            m.calls[0].request.url_or_pattern,
+            URL("http://example.com/api?foo=bar#fragment")
+        )
+
+    @aioresponses()
+    @asyncio.coroutine
+    def test_call_twice_with_repeat(self, m):
+        m.get(self.url, status=204, repeat=True)
+        yield from self.session.get(self.url)
+        response = yield from self.session.get(self.url)
+        self.assertIsInstance(response, ClientResponse)
+        self.assertEqual(response.status, 204)
+        self.assertEqual(len(m.calls), 2)
+        self.assertEqual(
+            m.calls[0].request,
+            m.calls[1].request
+        )
 
     @aioresponses()
     @asyncio.coroutine
@@ -241,10 +274,15 @@ class AIOResponsesTestCase(TestCase):
             self.assertEqual(resp.status, 201)
             resp = yield from self.session.get(self.url)
             self.assertEqual(resp.status, 202)
+            self.assertEqual(
+                [call.response.status for call in m.calls],
+                [200, 201, 202]
+            )
 
             key = ('GET', URL(self.url))
             self.assertIn(key, m.requests)
             self.assertEqual(len(m.requests[key]), 3)
+            self.assertEqual(len(m.calls), 3)
             self.assertEqual(m.requests[key][0].args, tuple())
             self.assertEqual(m.requests[key][0].kwargs,
                              {'allow_redirects': True})
@@ -297,6 +335,7 @@ class AIOResponsesTestCase(TestCase):
         with self.assertRaises(ValueError):
             self.run_async(doit())
         self.assertEqual(self.run_async(doit()).status, 200)
+        self.assertEqual(len(mocked.calls), 3)
 
     @aioresponses()
     @asyncio.coroutine
