@@ -189,6 +189,29 @@ class AIOResponsesTestCase(TestCase):
 
     @aioresponses()
     @asyncio.coroutine
+    def test_assert_any_call_success(self, m):
+        http_bin_url = "http://httpbin.org"
+        m.get(self.url)
+        m.get(http_bin_url)
+        yield from self.session.get(self.url)
+        response = yield from self.session.get(http_bin_url)
+        self.assertEqual(response.status, 200)
+        m.assert_any_call(self.url)
+        m.assert_any_call(http_bin_url)
+
+    @aioresponses()
+    @asyncio.coroutine
+    def test_assert_any_call_not_called(self, m):
+        http_bin_url = "http://httpbin.org"
+        m.get(self.url)
+        response = yield from self.session.get(self.url)
+        self.assertEqual(response.status, 200)
+        m.assert_any_call(self.url)
+        with self.assertRaises(AssertionError):
+            m.assert_any_call(http_bin_url)
+
+    @aioresponses()
+    @asyncio.coroutine
     def test_streaming(self, m):
         m.get(self.url, body='Test')
         resp = yield from self.session.get(self.url)

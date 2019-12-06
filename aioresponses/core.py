@@ -230,10 +230,22 @@ class RequestMatch(object):
 RequestCall = namedtuple('RequestCall', ['args', 'kwargs'])
 
 
+class _AnyComparer(list):
+    """A list which checks if it contains a call which may have an
+    argument of ANY, flipping the components of item and self from
+    their traditional locations so that ANY is guaranteed to be on
+    the left."""
+    def __contains__(self, item):
+        for _call in self:
+            if _call == item:
+                return True
+        return False
+
+
 class aioresponses(object):
     """Mock aiohttp requests made by ClientSession."""
     _matches = None  # type: List[RequestMatch]
-    _responses = None  # type: List[ClientResponse]
+    _responses = None  # type: Dict
     requests = None  # type: Dict
 
     def __init__(self, **kwargs):
@@ -243,8 +255,10 @@ class aioresponses(object):
                              side_effect=self._request_mock,
                              autospec=True)
         self.requests = {}
+        self._responses = {}
         self._calls = CallList()
         self._call_args = None
+        self._call_args_list = CallList()
 
     def __enter__(self) -> 'aioresponses':
         self.start()
@@ -276,19 +290,18 @@ class aioresponses(object):
         return wrapped
 
     def clear(self):
-        self._responses.clear()
         self._matches.clear()
         self._call_args = None
+        self._call_args_list.clear()
         self._calls.clear()
 
     def start(self):
-        self._responses = []
         self._matches = []
         self.patcher.start()
         self.patcher.return_value = self._request_mock
 
     def stop(self) -> None:
-        for response in self._responses:
+        for response in self._responses.values():
             response.close()
         self.patcher.stop()
         self.clear()
@@ -378,6 +391,22 @@ class aioresponses(object):
         else:
             raise NotImplementedError
 
+    def _format_call_signature(self, args, kwargs):
+        message = '%s(%%s)' % self.__class__.__name__ or 'mock'
+        formatted_args = ''
+        args_string = ', '.join([repr(arg) for arg in args])
+        kwargs_string = ', '.join([
+            '%s=%r' % (key, value) for key, value in kwargs.items()
+        ])
+        if args_string:
+            formatted_args = args_string
+        if kwargs_string:
+            if formatted_args:
+                formatted_args += ', '
+            formatted_args += kwargs_string
+
+        return message % formatted_args
+
     def assert_not_called(self):
         """assert that the mock was never called.
         """
@@ -407,7 +436,8 @@ class aioresponses(object):
             raise AssertionError(msg)
 
     def assert_called_with(self, *args, **kwargs):
-        """assert that the mock was called with the specified arguments.
+        """assert that the last call was made with the specified arguments.
+
         Raises an AssertionError if the args and keyword args passed in are
         different to the last call to the mock."""
         self.assert_called()
@@ -421,6 +451,20 @@ class aioresponses(object):
                       actual))
 
             raise AssertionError(msg)
+
+    def assert_any_call(self, *args, **kwargs):
+        """assert the mock has been called with the specified arguments.
+        The assert passes if the mock has *ever* been called, unlike
+        `assert_called_with` and `assert_called_once_with` that only pass if
+        the call is the most recent one."""
+        expected = self._call_matcher((args, kwargs))
+        cause = expected if isinstance(expected, Exception) else None
+        actual = [self._call_matcher(request) for request, _ in self._call_args_list]
+        if cause or expected not in _AnyComparer(actual):
+            expected_string = self._format_call_signature(args, kwargs)
+            raise AssertionError(
+                '%s call not found' % expected_string
+            ) from cause
 
     def assert_called_once_with(self, *args, **kwargs):
         """assert that the mock was called once with the specified arguments.
@@ -445,16 +489,17 @@ class aioresponses(object):
         response, request = await self.match(method, url, **kwargs)
 
         self._call_args = request
+        self._call_args_list.add(request, response)
         self._calls.add(request, response)
 
         if response is None:
             raise ClientConnectionError(
                 'Connection refused: {} {}'.format(method, url)
             )
-        self._responses.append(response)
         key = (method, url)
         self.requests.setdefault(key, [])
         self.requests[key].append(RequestCall(args, kwargs))
+        self._responses[key] = response
 
         # Automatically call response.raise_for_status() on a request if the
         # request was initialized with raise_for_status=True. Also call
