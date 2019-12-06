@@ -412,7 +412,7 @@ class aioresponses(object):
         """
         if len(self._calls) != 0:
             msg = ("Expected '%s' to not have been called. Called %s times."
-                   % (self.__class__,
+                   % (self.__class__.__name__,
                       len(self._calls)))
             raise AssertionError(msg)
 
@@ -421,7 +421,7 @@ class aioresponses(object):
         """
         if len(self._calls) == 0:
             msg = ("Expected '%s' to not have been called. Called %s times."
-                   % (self.__class__,
+                   % (self.__class__.__name__,
                       len(self._calls)))
             raise AssertionError(msg)
 
@@ -430,7 +430,7 @@ class aioresponses(object):
         """
         if not len(self._calls) == 1:
             msg = ("Expected '%s' to have been called once. Called %s times."
-                   % (self.__class__ or 'mock',
+                   % (self.__class__.__name__,
                       len(self._calls)))
 
             raise AssertionError(msg)
@@ -446,7 +446,7 @@ class aioresponses(object):
         actual = self._call_matcher(self._call_args)
         if expected != actual:
             msg = ("Expected '%s' to been called with '%s'. Actual call '%s'"
-                   % (self.__class__,
+                   % (self.__class__.__name__,
                       expected,
                       actual))
 
