@@ -257,8 +257,8 @@ class aioresponses(object):
         self.requests = {}
         self._responses = {}
         self._calls = CallList()
-        self._call_args = None
-        self._call_args_list = CallList()
+        self._request_match = None
+        self._request_match_list = CallList()
 
     def __enter__(self) -> 'aioresponses':
         self.start()
@@ -291,8 +291,8 @@ class aioresponses(object):
 
     def clear(self):
         self._matches.clear()
-        self._call_args = None
-        self._call_args_list.clear()
+        self._request_match = None
+        self._request_match_list.clear()
         self._calls.clear()
 
     def start(self):
@@ -443,7 +443,7 @@ class aioresponses(object):
         self.assert_called()
 
         expected = self._call_matcher((args, kwargs))
-        actual = self._call_matcher(self._call_args)
+        actual = self._call_matcher(self._request_match)
         if expected != actual:
             msg = ("Expected '%s' to been called with '%s'. Actual call '%s'"
                    % (self.__class__.__name__,
@@ -459,7 +459,7 @@ class aioresponses(object):
         the call is the most recent one."""
         expected = self._call_matcher((args, kwargs))
         cause = expected if isinstance(expected, Exception) else None
-        actual = [self._call_matcher(request) for request, _ in self._call_args_list]
+        actual = [self._call_matcher(request) for request, _ in self._request_match_list]
         if cause or expected not in _AnyComparer(actual):
             expected_string = self._format_call_signature(args, kwargs)
             raise AssertionError(
@@ -488,8 +488,8 @@ class aioresponses(object):
 
         response, request = await self.match(method, url, **kwargs)
 
-        self._call_args = request
-        self._call_args_list.add(request, response)
+        self._request_match = request
+        self._request_match_list.add(request, response)
         self._calls.add(request, response)
 
         if response is None:
