@@ -461,7 +461,8 @@ class aioresponses(object):
         the call is the most recent one."""
         expected = self._call_matcher((args, kwargs))
         cause = expected if isinstance(expected, Exception) else None
-        actual = [self._call_matcher(request) for request, _ in self._request_match_list]
+        actual = [self._call_matcher(request)
+                  for request, _ in self._request_match_list]
         if cause or expected not in _AnyComparer(actual):
             expected_string = self._format_call_signature(args, kwargs)
             raise AssertionError(
