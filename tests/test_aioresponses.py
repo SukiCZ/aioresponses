@@ -102,7 +102,7 @@ class AIOResponsesTestCase(TestCase):
               headers={'Connection': 'keep-alive'})
         response = yield from self.session.get(self.url)
         expected_raw_headers = (
-            (b'Content-Type', b'text/html'),
+            (hdrs.CONTENT_TYPE.encode(), b'text/html'),
             (b'Connection', b'keep-alive')
         )
 
@@ -311,6 +311,33 @@ class AIOResponsesTestCase(TestCase):
             self.assertEqual(m.requests[key][0].args, tuple())
             self.assertEqual(m.requests[key][0].kwargs,
                              {'allow_redirects': True})
+
+    @asyncio.coroutine
+    def test_request_retrieval_in_case_no_response(self):
+        with aioresponses() as m:
+            with self.assertRaises(ClientConnectionError):
+                yield from self.session.get(self.url)
+
+            key = ('GET', URL(self.url))
+            self.assertIn(key, m.requests)
+            self.assertEqual(len(m.requests[key]), 1)
+            self.assertEqual(m.requests[key][0].args, tuple())
+            self.assertEqual(m.requests[key][0].kwargs,
+                             {'allow_redirects': True})
+
+    @asyncio.coroutine
+    def test_request_failure_in_case_session_is_closed(self):
+        @asyncio.coroutine
+        def do_request(session):
+            return (yield from session.get(self.url))
+
+        with aioresponses():
+            coro = do_request(self.session)
+            yield from self.session.close()
+
+            with self.assertRaises(RuntimeError) as exception_info:
+                yield from coro
+            assert str(exception_info.exception) == "Session is closed"
 
     @asyncio.coroutine
     def test_address_as_instance_of_url_combined_with_pass_through(self):

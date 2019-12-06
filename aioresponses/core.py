@@ -181,6 +181,8 @@ class RequestMatch(object):
             kwargs['traces'] = []
             kwargs['loop'] = loop
             kwargs['session'] = None
+        else:
+            loop = None
         # We need to initialize headers manually
         _headers = CIMultiDict({hdrs.CONTENT_TYPE: content_type})
         if headers:
@@ -196,7 +198,7 @@ class RequestMatch(object):
             resp.raw_headers = raw_headers
         resp.status = status
         resp.reason = reason
-        resp.content = stream_reader_factory()
+        resp.content = stream_reader_factory(loop)
         resp.content.feed_data(body)
         resp.content.feed_eof()
         return resp
@@ -478,6 +480,9 @@ class aioresponses(object):
                             *args: Tuple,
                             **kwargs: Dict) -> 'ClientResponse':
         """Return mocked response object or raise connection error."""
+        if orig_self.closed:
+            raise RuntimeError('Session is closed')
+
         url = normalize_url(merge_params(url, kwargs.get('params')))
         url_str = str(url)
         for prefix in self._passthrough:
@@ -492,13 +497,14 @@ class aioresponses(object):
         self._request_match_list.add(request, response)
         self._calls.add(request, response)
 
+        key = (method, url)
+        self.requests.setdefault(key, [])
+        self.requests[key].append(RequestCall(args, kwargs))
+
         if response is None:
             raise ClientConnectionError(
                 'Connection refused: {} {}'.format(method, url)
             )
-        key = (method, url)
-        self.requests.setdefault(key, [])
-        self.requests[key].append(RequestCall(args, kwargs))
         self._responses[key] = response
 
         # Automatically call response.raise_for_status() on a request if the

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-import asyncio  # noqa
-import re
+import asyncio  # noqa: F401
+import sys
 from distutils.version import StrictVersion
 from typing import Dict, Optional, Tuple, Union  # noqa
 from urllib.parse import parse_qsl, urlencode
@@ -9,11 +9,10 @@ from aiohttp import __version__ as aiohttp_version, StreamReader
 from multidict import MultiDict
 from yarl import URL
 
-try:
-    Pattern = re._pattern_type
-except AttributeError:  # pragma: no cover
-    # Python 3.7
-    Pattern = re.Pattern
+if sys.version_info < (3, 7):
+    from re import _pattern_type as Pattern
+else:
+    from re import Pattern
 
 AIOHTTP_VERSION = StrictVersion(aiohttp_version)
 
@@ -24,11 +23,11 @@ if AIOHTTP_VERSION >= StrictVersion('3.0.0'):
             loop: 'Optional[asyncio.AbstractEventLoop]' = None
     ):
         protocol = ResponseHandler(loop=loop)
-        return StreamReader(protocol)
+        return StreamReader(protocol, loop=loop)
 
-else:  # pragma: no cover
+else:
 
-    def stream_reader_factory():
+    def stream_reader_factory(loop=None):
         return StreamReader()
 
 
